@@ -96,8 +96,16 @@ process_file:
     ; Get the max line length
     mov rdi, rax
     call get_max_line_length
-
     _after_get_max_line_length:
+
+    mov rax, 0
+
+    pop rax
+    push rax
+    mov rdi, rax
+    call get_max_line_length
+    _after_get_max_line_length_2:
+
 
     ; Close the file
     pop rdi
@@ -141,25 +149,21 @@ get_max_line_length:
             inc rsi
             dec r8
 
-            ; Check if the character is a new line
-            cmp byte [r11], 0xa
-            je .new_line
+            ; Using cmovg to avoid branching
+            ; max_length = length > max_length ? length : max_length;
+            cmp r10, r9 ; Check if the current line length is greater than the max line length
+            cmovg r9, r10 ; Set the max line length
 
-            ; Increment the current line length
+            ; length = length + 1;
             inc r10
+
+            ; length = (buffer[i] == '\n') ? 0 : length;
+            mov rax, 0
+            cmp byte [r11], 0xa ; Check if the character is a new line
+            cmove r10, rax ; Set the current line length to 0 if the character is a new line
+            
+            ; Loop through the buffer
             jmp .loop_through_buffer
-
-            .new_line:
-                ; Check if the current line length is greater than the max line length
-                mov rax, r10
-                xor r10, r10
-
-                cmp rax, r9
-                jle .loop_through_buffer
-
-                ; Set the max line length
-                mov r9, rax
-                jmp .loop_through_buffer
 
         ; Loop through the file
         jmp .read_file_loop
