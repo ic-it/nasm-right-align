@@ -11,6 +11,9 @@
 ;   |  1|
 ; Usage: ./program <filename1>
 
+; Include macro.asm
+%include 'src/macro.asm'
+
 ; From ioutils
 extern open_file, read_file, write_file, close_file, seek_file, write_stdout 
 
@@ -47,6 +50,8 @@ section .rodata
     error_maybe_forgor_return db 'ERROR!! Maybe you forgot to return', 0xa, 0
     error_maybe_forgor_return_len equ $-error_maybe_forgor_return
 
+    zero db 0
+
 
 section .data
     buffer db BUFFER_SIZE dup(0)
@@ -79,33 +84,37 @@ _start:
 ; ## Input:
 ;   - rdi: File name
 ; ## Output:
-;   - rax: 0 if the file was processed
-;          -1 if the file was not processed
+;   None
 process_file:
     ; Open the file
     mov rdi, rdi
     mov rsi, O_RDONLY
     xor rdx, rdx
     call open_file
-    push rax
+    push rax ; Save the file descriptor
 
     ; Check if the file was opened
     cmp rax, 0
     jl error_exit
 
     ; Get the max line length
-    mov rdi, rax
+    pop rdi
+    push rdi ; Save the file descriptor
     call get_max_line_length
-    _after_get_max_line_length:
 
-    mov rax, 0
+    ; Seek 0
+    pop rdi
+    push rdi ; Save the file descriptor
+    mov rdi, rdi
+    mov rsi, 0
+    mov rdx, SEEK_SET
+    call seek_file
 
-    pop rax
-    push rax
-    mov rdi, rax
-    call get_max_line_length
-    _after_get_max_line_length_2:
-
+    ; Display the lines
+    pop rdi
+    push rdi ; Save the file descriptor
+    call display_numbers
+    _after_display_numbers:
 
     ; Close the file
     pop rdi
@@ -120,10 +129,10 @@ process_file:
 ; ## Output:
 ;   - rax: Max line length
 get_max_line_length:
-    xor r8, r8 ; Buffer length
-    xor r9, r9 ; Max line length
-    xor r10, r10 ; Current line length
-    xor r11, r11 ; Current character
+    clear_reg r8 ; Buffer length
+    clear_reg r9 ; Max line length
+    clear_reg r10 ; Current line length
+    clear_reg r11 ; Current character
 
     .read_file_loop:
         ; Read the file
@@ -158,7 +167,7 @@ get_max_line_length:
             inc r10
 
             ; length = (buffer[i] == '\n') ? 0 : length;
-            mov rax, 0
+            mov rax, 0 ; TODO: use zero
             cmp byte [r11], 0xa ; Check if the character is a new line
             cmove r10, rax ; Set the current line length to 0 if the character is a new line
             
@@ -169,14 +178,94 @@ get_max_line_length:
         jmp .read_file_loop
     
     .get_max_line_length_exit:
-    ; Seek 0
-    mov rdi, rdi
-    mov rsi, 0
-    mov rdx, SEEK_SET
-    call seek_file
 
     mov rax, r9
     ret
+
+
+; Display Lines
+; Steps:
+; - Get the length of the next line
+; - If length is -1, return
+; - Read the line from the file
+; - repeat ' ' max_length - length times
+; - Write the line to stdout
+; - Repeat
+display_numbers:
+    call get_next_line_length
+    ret
+
+
+; Get the length of the next line in a file and seek back
+; ## Input:
+;   - rdi: file descriptor
+; ## Output:
+;   - rax: length of the next line (line length + new line length)
+get_next_line_length:
+    clear_reg r8 ; Buffer length
+    clear_reg r9 ; Seekback
+    clear_reg r10 ; Length
+    clear_reg r11 ; Current character
+
+    .read_file_loop:
+        ; Read the file
+        mov rdi, rdi
+        lea rsi, [buffer]
+        mov rdx, BUFFER_SIZE
+        call read_file
+
+        ; Check if the file was read
+        cmp rax, 0
+        je .get_next_line_length_exit
+
+        ; Add the bytes read to the seekback
+        add r9, rax
+
+        ; Loop through the buffer
+        mov r8, rax
+        mov rsi, buffer
+        .loop_through_buffer:
+            ; Check if the buffer is empty
+            cmp r8, 0
+            je .read_file_loop
+
+            ; Get the character
+            mov r11, rsi
+            inc rsi
+            dec r8
+
+            ; length = length + 1;
+            inc r10
+
+            cmp byte [r11], 0xa ; Check if the character is a new line
+            jne .loop_through_buffer
+
+            ; Return the length
+            jmp .get_next_line_length_exit
+
+        ; Loop through the buffer
+        jmp .loop_through_buffer
+
+    .get_next_line_length_exit:
+        ; seek back
+        mov rdi, rdi
+        mov rsi, r9
+        neg rsi
+        mov rdx, SEEK_CUR 
+        call seek_file
+
+        cmp r10, 0
+        je .get_next_line_length_exit_error
+        jmp .get_next_line_length_exit_ok
+
+    .get_next_line_length_exit_ok:
+        dec r10
+        mov rax, r10
+        ret
+
+    .get_next_line_length_exit_error:
+        mov rax, -1
+        ret
 
 
 ; Exit the program with an error message
