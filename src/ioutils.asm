@@ -89,4 +89,3 @@ write_stdout:
     mov rdi, STDOUT
     call write_file
     ret
-

@@ -57,6 +57,7 @@ section .data
     buffer db BUFFER_SIZE dup(0)
     buffer_len equ $-buffer
 
+
 section .text
 _start:
     ; Read the arguments
@@ -113,8 +114,7 @@ process_file:
     ; Display the lines
     pop rdi
     push rdi ; Save the file descriptor
-    call display_numbers
-    _after_display_numbers:
+    call display_lines
 
     ; Close the file
     pop rdi
@@ -191,8 +191,74 @@ get_max_line_length:
 ; - repeat ' ' max_length - length times
 ; - Write the line to stdout
 ; - Repeat
-display_numbers:
-    call get_next_line_length
+; ## Input:
+;   - rdi: file descriptor
+;   - rsi: max line length
+; ## Output:
+;   None
+display_lines:
+    push rdi
+    clear_reg r8; Max line length
+    clear_reg r9; Line length
+    clear_reg r10; White spaces length
+    clear_reg r11; TMP
+
+    mov r8, rsi ; Save the max line length
+
+    .display_loop:
+        ; Get the length of the next line
+        pop rdi
+        push rdi
+        call get_next_line_length
+
+        ; Check if the length is -1
+        cmp rax, -1
+        je .display_numbers_exit
+
+        mov r9, rax ; Save the line length
+
+        ; Repeat ' ' max_length - length times
+        mov rax, r8 ; max_length
+        sub rax, r9 ; max_length - length
+        mov r10, rax ; Save the white spaces length
+
+        ; Fill buffer with white spaces
+        call fill_buffer_with_white_spaces
+
+        ; Display the white spaces
+        .display_white_spaces:
+            ; Check if there are white spaces to display
+            cmp r10, 0
+            jle .display_numbers_write_line
+
+            ; Get the display size
+            mov rax, r10
+            cmp rax, BUFFER_SIZE
+            mov r10, BUFFER_SIZE
+            cmovg rax, r10
+
+            ; Write the white spaces
+            mov rsi, buffer
+            mov rdx, rax
+            call write_stdout
+
+            ; Update the white spaces length
+            sub r10, rax
+
+            ; Repeat
+            jmp .display_white_spaces
+
+        .display_numbers_write_line:
+        ; Display the line
+        mov rdi, rdi
+        mov rsi, r9
+        call display_line
+
+        ; Repeat
+        jmp .display_loop
+    
+    .display_numbers_exit:
+    pop rdi
     ret
 
 
@@ -202,6 +268,11 @@ display_numbers:
 ; ## Output:
 ;   - rax: length of the next line (line length + new line length)
 get_next_line_length:
+    push r8
+    push r9
+    push r10
+    push r11
+
     clear_reg r8 ; Buffer length
     clear_reg r9 ; Seekback
     clear_reg r10 ; Length
@@ -259,14 +330,99 @@ get_next_line_length:
         jmp .get_next_line_length_exit_ok
 
     .get_next_line_length_exit_ok:
-        dec r10
         mov rax, r10
-        ret
+        jmp .get_next_line_length_normal_exit
 
     .get_next_line_length_exit_error:
         mov rax, -1
+        jmp .get_next_line_length_normal_exit
+    
+    .get_next_line_length_normal_exit:
+        pop r11
+        pop r10
+        pop r9
+        pop r8
         ret
 
+; Display one line (withou new line)
+; ## Input:
+;   - rdi: file descriptor
+;   - rsi: line length
+; ## Output:
+;   None
+display_line:
+    push r8
+    push r9
+    push r10
+
+    clear_reg r8 ; Buffer length
+    clear_reg r9 ; Line length
+    clear_reg r10 ; tmp
+
+    mov r9, rsi ; Save the line length
+    .dispaly_line_loop:
+        ; get min of r9 and BUFFER_SIZE
+        mov rax, r9
+        cmp rax, BUFFER_SIZE
+        mov r10, BUFFER_SIZE
+        cmovg rax, r10
+
+        ; Read the file
+        mov rdi, rdi
+        lea rsi, [buffer]
+        mov rdx, rax
+        call read_file
+
+        ; Check if the file was read
+        cmp rax, 0
+        je .display_line_exit
+
+        ; Write the line
+        mov rsi, buffer
+        mov rdx, rax
+        call write_stdout
+        
+        ; Update the line length
+        sub r9, rax
+
+        ; Repeat
+        jmp .dispaly_line_loop
+    
+    .display_line_exit:
+    pop r10
+    pop r9
+    pop r8
+    ret
+
+
+
+; FIll Buffer with white spaces
+; ## Input:
+;   None
+; ## Output:
+;   None
+fill_buffer_with_white_spaces:
+    push rdi
+    push rcx
+    push rax
+
+    ; mov rdi, buffer
+    ; lea rdi, [buffer + BUFFER_SIZE - 1]
+    ; mov rcx, BUFFER_SIZE
+    ; mov al, ' '
+    ; rep stosq
+
+    mov rdi, buffer
+    mov ecx, BUFFER_SIZE
+    mov al, ' '
+    rep stosb
+
+    _bp:
+
+    pop rax
+    pop rcx
+    pop rdi
+    ret
 
 ; Exit the program with an error message
 segfault_exit:
