@@ -1,15 +1,10 @@
-; Read each file and lign it's content to the left
-; Example:
-;  Input:
-;   file1.txt:
-;   123
-;   12
-;   1
-;  Output:
-;   |123|
-;   | 12|
-;   |  1|
-; Usage: ./program <filename1>
+; Task: 10b
+; Pagination: 1b
+; 64kb+: 1b
+; Many files: 2b
+; Used STOSB: 1b
+; Comments: 1b 
+; Extern produce: 2b
 
 ; Include macro.asm
 %include 'src/macro.asm'
