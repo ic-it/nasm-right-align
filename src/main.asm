@@ -57,7 +57,13 @@ section .rodata
     error_maybe_forgor_return db 'ERROR!! Maybe you forgot to return', 0xa, 0
     error_maybe_forgor_return_len equ $-error_maybe_forgor_return
 
-    read_more_msg db 'Read more...', 0
+    readx_msg db 'Read: ', 0
+    readx_msg_len equ $-readx_msg
+
+    fromy_msg db ' from ', 0
+    fromy_msg_len equ $-fromy_msg
+
+    read_more_msg db '. Read more...', 0
     read_more_msg_len equ $-read_more_msg
 
     ; Pagination
@@ -86,6 +92,7 @@ section .bss
 
     display_line_number resq 1
     arg_number resq 1
+    current_file_lines_count resq 1
 
 
 section .data
@@ -211,6 +218,10 @@ process_file:
     mov rdi, 1
     mov [display_line_number], rdi
 
+    ; Set the current file lines count
+    mov rdi, 0
+    mov [current_file_lines_count], rdi
+
     ; Print the file name message
     mov rsi, filename_msg
     mov rdx, filename_msg_len
@@ -304,6 +315,9 @@ get_max_line_length:
             inc r10 ; length = length + 1;
 
             zero_if_equal r10, byte [r11], 0xa
+            jne .skip_inc_current_file_lines_count
+                inc qword [current_file_lines_count]
+            .skip_inc_current_file_lines_count:
             
             ; Loop through the buffer
             jmp .loop_through_buffer
@@ -630,6 +644,26 @@ do_pagination:
     je .do_pagination_exit
     cmp qword [display_line_number], max_lines_before_pause
     jl .do_pagination_exit
+
+    mov rsi, readx_msg
+    mov rdx, readx_msg_len
+    call write_stdout
+
+    mov rdi, [display_line_number]
+    mov rsi, buffer
+    call itoa
+    mov rdx, rax
+    call write_stdout
+
+    mov rsi, fromy_msg
+    mov rdx, fromy_msg_len
+    call write_stdout
+
+    mov rdi, [current_file_lines_count]
+    mov rsi, buffer
+    call itoa
+    mov rdx, rax
+    call write_stdout
 
     mov rsi, read_more_msg
     mov rdx, read_more_msg_len
