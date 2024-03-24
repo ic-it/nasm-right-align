@@ -21,9 +21,11 @@ OBJS=$(patsubst $(SRC)/%.asm,$(BIN)/%.o,$(SRCS))
 all: $(BIN)/main
 
 $(BIN)/%.o: $(SRC)/%.asm
+	@mkdir -p $(BIN)
 	$(ASSM) $(ASSMFLAGS) $< -o $@
 
 $(BIN)/main: $(OBJS)
+	@mkdir -p $(BIN)
 	$(LINKER) -o $@ $^
 
 debug: $(BIN)/main

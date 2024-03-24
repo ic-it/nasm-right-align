@@ -15,13 +15,13 @@
 %include 'src/macro.asm'
 
 ; From ioutils
-extern open_file, read_file, write_file, close_file, seek_file, write_stdout 
+extern open_file, read_file, write_file, close_file, seek_file, write_stdout, write_one_byte, write_newline
 
 ; From argsutils
 extern init_args, get_argc, get_argv, get_arg
 
 ; From strutils
-extern strlen, strcmp
+extern strlen, strcmp, itoa
 
 global _start
 
@@ -39,6 +39,9 @@ SEEK_END equ 2
 
 
 section .rodata
+    filename_msg db 'File: ', 0
+    filename_msg_len equ $-filename_msg
+
     usage_msg db 'Usage: ./program <filename1>', 0xa, 0
     usage_msg_len equ $-usage_msg
 
@@ -55,6 +58,11 @@ section .bss
     buffer resb BUFFER_SIZE
     buffer_len equ $-buffer
 
+    fd resq 1
+
+    display_line_number resq 1
+    arg_number resq 1
+
 
 section .text
 _start:
@@ -65,65 +73,109 @@ _start:
 
     ; Check if there is only one file
     call get_argc
-    cmp rax, 2
-    jne no_files_exit
+    mov r10, rax
+    cmp r10, 1
+    jl no_files_exit
 
-    ; Get the file name
-    mov rdi, 1
-    call get_arg
+    ; process arguments
+    mov qword [arg_number], 1
 
-    ; Process the file
-    mov rdi, rax
-    call process_file
+    .process_files_loop:
+        ; Get the file name
+        mov rdi, [arg_number]
+        call get_arg
+
+        ; Process the file
+        mov rdi, rax
+        call process_file
+
+        ; Write a new line
+        call write_newline
+
+        ; Increment the arg number
+        inc qword [arg_number]
+
+        ; Check if there are more files
+        cmp r10, qword [arg_number]
+        jg .process_files_loop
 
     ; Exit the program
     jmp ok_exit
+
 
 ; Process File
 ; **Input:**
 ;   - rdi: File name
 ; **Output:**
 ;   None
+; ---
+; **Registers:**
+;   - rsi: Buffer
+;   - rdx: Buffer length
+;   - r9: Max line length
+;   - r10: filename 
 process_file:
+    push r9
+    push r10
+    clear_reg r9
+    clear_reg r10
+
+    mov r10, rdi ; Save the file name
+
+    ; Set the display line number
+    mov rdi, 1
+    mov [display_line_number], rdi
+
+    ; Print the file name message
+    mov rsi, filename_msg
+    mov rdx, filename_msg_len
+    call write_stdout
+    
+    ; Print the file name
+    mov rsi, r10
+    call strlen
+    mov rdx, rax
+    call write_stdout
+
+    ; New line
+    call write_newline
+
     ; Open the file
-    mov rdi, rdi
+    mov rdi, r10
     mov rsi, O_RDONLY
     xor rdx, rdx
     call open_file
-    push rax ; Save the file descriptor
+    mov qword [fd], rax
 
     ; Check if the file was opened
     cmp rax, 0
     jl error_exit
 
     ; Get the max line length
-    pop rdi
-    push rdi ; Save the file descriptor
     call get_max_line_length
+    mov r9, rax ; Save the max line length
 
     ; Seek 0
-    pop rdi
-    push rdi ; Save the file descriptor
-    mov rdi, rdi
+    mov rdi, [fd]
     mov rsi, 0
     mov rdx, SEEK_SET
     call seek_file
 
     ; Display the lines
-    pop rdi
-    push rdi ; Save the file descriptor
+    mov rsi, r9
     call display_lines
 
     ; Close the file
-    pop rdi
     call close_file
 
+    pop r10
+    pop r9
     ret
 
 
 ; Get Max Line Length
 ; **Input:**
-;   - rdi: file descriptor
+;   None
 ; **Output:**
 ;   - rax: Max line length
 ; ---
@@ -141,6 +193,7 @@ get_max_line_length:
 
     .read_file_loop:
         ; Read the file
+        mov rdi, [fd]
         mov rsi, buffer
         mov rdx, BUFFER_SIZE
         call read_file
@@ -182,39 +235,54 @@ get_max_line_length:
 
 ; Display Lines
 ; **Input:**
-;   - rdi: file descriptor
 ;   - rsi: max line length
 ; **Output:**
 ;   None
 ; ---
 ; **Registers:**
 ;   - rax: read bytes
-
+;   - r8: Max line length
+;   - r9: Line length
+;   - r10: White spaces length
+;   - r11: TMP
 display_lines:
-    push rdi
-    clear_reg r8; Max line length
-    clear_reg r9; Line length
-    clear_reg r10; White spaces length
-    clear_reg r11; TMP
+    clear_reg r8
+    clear_reg r9
+    clear_reg r10
+    clear_reg r11
 
     mov r8, rsi ; Save the max line length
 
     .display_loop:
+
         ; Get the length of the next line
-        pop rdi
-        push rdi
         call get_next_line_length
 
         ; Check if the length is -1
         cmp rax, -1
         je .display_numbers_exit
 
+        push rax
+        ; Print the line number
+        mov rdi, [display_line_number]
+        mov rsi, buffer
+        call itoa
+        mov rdx, rax
+        call write_stdout
+
+        ; write tab
+        mov dil, 9
+        call write_one_byte
+
+        ; Increment the line number
+        inc qword [display_line_number]
+        pop rax
+
         mov r9, rax ; Save the line length
 
         ; Repeat ' ' max_length - length times
-        mov rax, r8 ; max_length
-        sub rax, r9 ; max_length - length
-        mov r10, rax ; Save the white spaces length
+        mov r10, r8
+        sub r10, r9
 
         ; Fill buffer with white spaces
         call fill_buffer_with_white_spaces
@@ -227,9 +295,8 @@ display_lines:
 
             ; Get the display size
             mov rax, r10
-            cmp rax, BUFFER_SIZE
-            mov r10, BUFFER_SIZE
-            cmovg rax, r10
+            mov r11, BUFFER_SIZE
+            set_min rax, r11
 
             ; Write the white spaces
             mov rsi, buffer
@@ -243,45 +310,53 @@ display_lines:
             jmp .display_white_spaces
 
         .display_numbers_write_line:
-        ; Display the line
-        mov rdi, rdi
-        mov rsi, r9
-        call display_line
+            ; Display the line
+            mov rsi, r9
+            call display_line
+            call write_newline
 
         ; Repeat
         jmp .display_loop
     
     .display_numbers_exit:
-    pop rdi
     ret
 
 
 ; Get the length of the next line in a file and seek back
 ; **Input:**
-;   - rdi: file descriptor
+;   None
 ; **Output:**
 ;   - rax: length of the next line (line length + new line length)
+; ---
+; **Registers:**
+;   - r8: Buffer length
+;   - r9: Seekback
+;   - r10: Length
+;   - r11: Current character
+;   - r12: TMP
 get_next_line_length:
     push r8
     push r9
     push r10
     push r11
+    push r12
 
-    clear_reg r8 ; Buffer length
-    clear_reg r9 ; Seekback
-    clear_reg r10 ; Length
-    clear_reg r11 ; Current character
+    clear_reg r8
+    clear_reg r9 
+    clear_reg r10
+    clear_reg r11
+    clear_reg r12
 
     .read_file_loop:
         ; Read the file
-        mov rdi, rdi
-        lea rsi, [buffer]
+        mov rdi, [fd]
+        mov rsi, buffer
         mov rdx, BUFFER_SIZE
         call read_file
 
         ; Check if the file was read
         cmp rax, 0
-        je .get_next_line_length_exit
+        je .exit
 
         ; Add the bytes read to the seekback
         add r9, rax
@@ -305,33 +380,43 @@ get_next_line_length:
             cmp byte [r11], 0xa ; Check if the character is a new line
             jne .loop_through_buffer
 
+            mov r12, 1
+
             ; Return the length
-            jmp .get_next_line_length_exit
+            jmp .exit
 
         ; Loop through the buffer
         jmp .loop_through_buffer
 
-    .get_next_line_length_exit:
+    .exit:
         ; seek back
-        mov rdi, rdi
+        mov rdi, [fd]
         mov rsi, r9
         neg rsi
         mov rdx, SEEK_CUR 
         call seek_file
 
         cmp r10, 0
-        je .get_next_line_length_exit_error
-        jmp .get_next_line_length_exit_ok
+        je .error_exit
+        jmp .normal_exit
 
-    .get_next_line_length_exit_ok:
+    .normal_exit:
+        ; Decrement the length if the last character is a new line
+        cmp r12, 1
+        jne .dont_decrement
+        dec r10
+        .dont_decrement:
+
+        ; Return the length
         mov rax, r10
-        jmp .get_next_line_length_normal_exit
+        jmp .pop_exit
 
-    .get_next_line_length_exit_error:
+    .error_exit:
         mov rax, -1
-        jmp .get_next_line_length_normal_exit
+        jmp .pop_exit
     
-    .get_next_line_length_normal_exit:
+    .pop_exit:
+        pop r12
         pop r11
         pop r10
         pop r9
@@ -340,30 +425,37 @@ get_next_line_length:
 
 ; Display one line (withou new line)
 ; **Input:**
-;   - rdi: file descriptor
 ;   - rsi: line length
 ; **Output:**
 ;   None
+; ---
+; **Registers:**
+;   - r8: Buffer length
+;   - r9: Line length
+;   - r10: tmp
 display_line:
     push r8
     push r9
     push r10
 
-    clear_reg r8 ; Buffer length
-    clear_reg r9 ; Line length
-    clear_reg r10 ; tmp
+    clear_reg r8
+    clear_reg r9
+    clear_reg r10
 
     mov r9, rsi ; Save the line length
+
     .dispaly_line_loop:
-        ; get min of r9 and BUFFER_SIZE
+        ; Check if the line is empty
+        cmp r9, 0
+        je .display_line_exit
+
         mov rax, r9
-        cmp rax, BUFFER_SIZE
         mov r10, BUFFER_SIZE
-        cmovg rax, r10
+        set_min rax, r10
 
         ; Read the file
-        mov rdi, rdi
-        lea rsi, [buffer]
+        mov rdi, [fd]
+        mov rsi, buffer
         mov rdx, rax
         call read_file
 
@@ -383,6 +475,12 @@ display_line:
         jmp .dispaly_line_loop
     
     .display_line_exit:
+        ; read the new line
+        mov rdi, [fd]
+        mov rsi, buffer
+        mov rdx, 1
+        call read_file
+
     pop r10
     pop r9
     pop r8
@@ -395,23 +493,22 @@ display_line:
 ;   None
 ; **Output:**
 ;   None
+; ---
+; **Registers:**
+;   - rdi: Buffer
+;   - rcx: Buffer length
+;   - rax: Character
 fill_buffer_with_white_spaces:
     push rdi
     push rcx
     push rax
-
-    ; mov rdi, buffer
-    ; lea rdi, [buffer + BUFFER_SIZE - 1]
-    ; mov rcx, BUFFER_SIZE
-    ; mov al, ' '
-    ; rep stosq
 
     mov rdi, buffer
     mov ecx, BUFFER_SIZE
     mov al, ' '
     rep stosb
 
-    _bp:
+    bp_:
 
     pop rax
     pop rcx

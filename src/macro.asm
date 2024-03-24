@@ -19,6 +19,17 @@
     cmovg %1, %2
 %endmacro
 
+; Using cmovl to avoid branching
+; **Params:**
+; - %1: register to store min value
+; - %2: register to compare
+; **Example:**
+;   minval = val < minval ? val : minval
+%macro set_min 2
+    cmp %2, %1
+    cmovl %1, %2
+%endmacro
+
 ; Set zero if equal
 ; **Params:**
 ; - %1: register to set to 0 if equal
