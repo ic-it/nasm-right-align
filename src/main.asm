@@ -37,10 +37,8 @@ SEEK_SET equ 0
 SEEK_CUR equ 1
 SEEK_END equ 2
 
-section .rodata
-    nl db 0xa, 0    ; New line
-    nl_len equ $-nl ; New line length
 
+section .rodata
     usage_msg db 'Usage: ./program <filename1>', 0xa, 0
     usage_msg_len equ $-usage_msg
 
@@ -53,8 +51,8 @@ section .rodata
     zero db 0
 
 
-section .data
-    buffer db BUFFER_SIZE dup(0)
+section .bss
+    buffer resb BUFFER_SIZE
     buffer_len equ $-buffer
 
 
@@ -71,7 +69,7 @@ _start:
     jne no_files_exit
 
     ; Get the file name
-    mov rsi, 1
+    mov rdi, 1
     call get_arg
 
     ; Process the file
@@ -82,9 +80,9 @@ _start:
     jmp ok_exit
 
 ; Process File
-; ## Input:
+; **Input:**
 ;   - rdi: File name
-; ## Output:
+; **Output:**
 ;   None
 process_file:
     ; Open the file
@@ -124,20 +122,26 @@ process_file:
 
 
 ; Get Max Line Length
-; ## Input:
+; **Input:**
 ;   - rdi: file descriptor
-; ## Output:
+; **Output:**
 ;   - rax: Max line length
+; ---
+; **Registers:**
+;   - rax: read bytes/return value
+;   - rsi: Buffer
+;   - rdx: Buffer length
+;   - r9: Max line length
+;   - r10: Line length
+;   - r11: Current character
 get_max_line_length:
-    clear_reg r8 ; Buffer length
-    clear_reg r9 ; Max line length
-    clear_reg r10 ; Current line length
-    clear_reg r11 ; Current character
+    clear_reg r9 
+    clear_reg r10
+    clear_reg r11
 
     .read_file_loop:
         ; Read the file
-        mov rdi, rdi
-        lea rsi, [buffer]
+        mov rsi, buffer
         mov rdx, BUFFER_SIZE
         call read_file
 
@@ -146,30 +150,22 @@ get_max_line_length:
         jle .get_max_line_length_exit
 
         ; Loop through the buffer
-        mov r8, rax
         mov rsi, buffer
         .loop_through_buffer:
             ; Check if the buffer is empty
-            cmp r8, 0
+            cmp rax, 0
             je .read_file_loop
 
             ; Get the character
             mov r11, rsi
             inc rsi
-            dec r8
+            dec rax
 
-            ; Using cmovg to avoid branching
-            ; max_length = length > max_length ? length : max_length;
-            cmp r10, r9 ; Check if the current line length is greater than the max line length
-            cmovg r9, r10 ; Set the max line length
+            set_max r9, r10
 
-            ; length = length + 1;
-            inc r10
+            inc r10 ; length = length + 1;
 
-            ; length = (buffer[i] == '\n') ? 0 : length;
-            mov rax, 0 ; TODO: use zero
-            cmp byte [r11], 0xa ; Check if the character is a new line
-            cmove r10, rax ; Set the current line length to 0 if the character is a new line
+            zero_if_equal r10, byte [r11], 0xa
             
             ; Loop through the buffer
             jmp .loop_through_buffer
@@ -178,24 +174,22 @@ get_max_line_length:
         jmp .read_file_loop
     
     .get_max_line_length_exit:
+    set_max r9, r10
 
     mov rax, r9
     ret
 
 
 ; Display Lines
-; Steps:
-; - Get the length of the next line
-; - If length is -1, return
-; - Read the line from the file
-; - repeat ' ' max_length - length times
-; - Write the line to stdout
-; - Repeat
-; ## Input:
+; **Input:**
 ;   - rdi: file descriptor
 ;   - rsi: max line length
-; ## Output:
+; **Output:**
 ;   None
+; ---
+; **Registers:**
+;   - rax: read bytes
+
 display_lines:
     push rdi
     clear_reg r8; Max line length
@@ -263,9 +257,9 @@ display_lines:
 
 
 ; Get the length of the next line in a file and seek back
-; ## Input:
+; **Input:**
 ;   - rdi: file descriptor
-; ## Output:
+; **Output:**
 ;   - rax: length of the next line (line length + new line length)
 get_next_line_length:
     push r8
@@ -345,10 +339,10 @@ get_next_line_length:
         ret
 
 ; Display one line (withou new line)
-; ## Input:
+; **Input:**
 ;   - rdi: file descriptor
 ;   - rsi: line length
-; ## Output:
+; **Output:**
 ;   None
 display_line:
     push r8
@@ -397,9 +391,9 @@ display_line:
 
 
 ; FIll Buffer with white spaces
-; ## Input:
+; **Input:**
 ;   None
-; ## Output:
+; **Output:**
 ;   None
 fill_buffer_with_white_spaces:
     push rdi
