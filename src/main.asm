@@ -15,7 +15,7 @@
 %include 'src/macro.asm'
 
 ; From ioutils
-extern open_file, read_file, write_file, close_file, seek_file, write_stdout, write_one_byte, write_newline
+extern open_file, read_file, write_file, close_file, seek_file, write_stdout, write_one_byte, write_newline, read_stdin
 
 ; From argsutils
 extern init_args, get_argc, get_argv, get_arg
@@ -60,8 +60,6 @@ section .rodata
     read_more_msg db 'Read more...', 0
     read_more_msg_len equ $-read_more_msg
 
-    max_lines_before_pause equ 10
-
     ; Pagination
     flag_read_more_text db '-p', 0
     flag_read_more_text_len equ $-flag_read_more_text
@@ -69,6 +67,13 @@ section .rodata
     ; Help
     flag_help_text db '-h', 0
     flag_help_text_len equ $-flag_help_text
+
+    ; Line Up & Clear Line & Line Start
+    line_up_clear_line_start_text db 27, '[1A', 27, '[2K', 13, 0
+    line_up_clear_line_start_text_len equ $-line_up_clear_line_start_text
+
+    ; Pagination constants
+    max_lines_before_pause equ 10
 
     zero db 0
 
@@ -81,6 +86,7 @@ section .bss
 
     display_line_number resq 1
     arg_number resq 1
+
 
 section .data
     flag_read_more db 0
@@ -342,6 +348,10 @@ display_lines:
         je .display_numbers_exit
 
         push rax
+        call do_pagination
+        pop rax
+
+        push rax
         ; Print the line number
         mov rdi, [display_line_number]
         mov rsi, buffer
@@ -601,6 +611,43 @@ fill_buffer_with_white_spaces:
     pop rcx
     pop rdi
     ret
+
+
+; Do Pagination
+; **Input:**
+;   None
+; **Output:**
+;   None
+; ---
+; **Notes:**
+;   - This function will write 'Read more...' and wait for the user to press enter
+; **Registers:**
+;   - rsi: Buffer
+;   - rdx: Buffer length
+;   - rax: Read bytes
+do_pagination:
+    cmp byte [flag_read_more], 0
+    je .do_pagination_exit
+    cmp qword [display_line_number], max_lines_before_pause
+    jl .do_pagination_exit
+
+    mov rsi, read_more_msg
+    mov rdx, read_more_msg_len
+    call write_stdout
+
+    ; Wait for the user to press enter
+    mov rsi, buffer
+    mov rdx, BUFFER_SIZE
+    call read_stdin
+
+    mov rsi, line_up_clear_line_start_text
+    mov rdx, line_up_clear_line_start_text_len
+    call write_stdout
+
+    .do_pagination_exit:
+    ret
+
+
 
 ; Exit the program with an error message
 segfault_exit:

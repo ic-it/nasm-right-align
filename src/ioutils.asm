@@ -1,7 +1,7 @@
 ; IO utils. 
 ; This file contains the functions to open, read, write and close files.
 
-global open_file, read_file, write_file, close_file, seek_file, write_stdout, write_one_byte, write_newline
+global open_file, read_file, write_file, close_file, seek_file, write_stdout, write_one_byte, write_newline, read_stdin
 
 ; System call numbers
 CALL_OPEN equ 2
@@ -48,6 +48,19 @@ read_file:
     mov rax, CALL_READ
     syscall
     ret
+
+
+; ## Read STDIN
+; ### Input:
+;   - rsi: buffer
+;   - rdx: buffer size
+; ### Output:
+;   - rax: number of bytes read
+read_stdin:
+    mov rdi, STDIN
+    call read_file
+    ret
+
 
 ; ## Write file
 ; ### Input:
