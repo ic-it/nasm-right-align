@@ -1,5 +1,7 @@
 # Assembly Program Documentation
 
+> Asciinema: [asciinema](https://asciinema.org/a/648900)
+
 ## Included Files
 
 - `macro.asm`: This file contains macros used within the assembly program.
