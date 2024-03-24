@@ -42,7 +42,13 @@ section .rodata
     filename_msg db 'File: ', 0
     filename_msg_len equ $-filename_msg
 
-    usage_msg db 'Usage: ./program <filename1>', 0xa, 0
+    help_message db "This program reads a file and ligns it's content to the right", 0xa, 0
+    help_message_len equ $-help_message
+
+    author_msg db 'Author: Illia Chaban', 0xa, 0
+    author_msg_len equ $-author_msg
+
+    usage_msg db 'Usage: ./program <filename1> <filename2> ...', 0xa, 'Options:', 0xa, '  -h: Show help', 0xa, '  -p: Paginate', 0xa, 0
     usage_msg_len equ $-usage_msg
 
     error_msg db 'Error', 0xa, 0
@@ -50,6 +56,19 @@ section .rodata
 
     error_maybe_forgor_return db 'ERROR!! Maybe you forgot to return', 0xa, 0
     error_maybe_forgor_return_len equ $-error_maybe_forgor_return
+
+    read_more_msg db 'Read more...', 0
+    read_more_msg_len equ $-read_more_msg
+
+    max_lines_before_pause equ 10
+
+    ; Pagination
+    flag_read_more_text db '-p', 0
+    flag_read_more_text_len equ $-flag_read_more_text
+
+    ; Help
+    flag_help_text db '-h', 0
+    flag_help_text_len equ $-flag_help_text
 
     zero db 0
 
@@ -63,8 +82,37 @@ section .bss
     display_line_number resq 1
     arg_number resq 1
 
+section .data
+    flag_read_more db 0
+    flag_help db 0
 
 section .text
+
+; Show Help
+; **Input:**
+;   None
+; **Output:**
+;   None
+show_help_message:
+    mov rsi, help_message
+    mov rdx, help_message_len
+    call write_stdout
+
+    mov rsi, author_msg
+    mov rdx, author_msg_len
+    call write_stdout
+
+    mov rsi, usage_msg
+    mov rdx, usage_msg_len
+    call write_stdout
+
+    ret
+
+; Start
+; ---
+; **Registers:**
+;   - r10: arg number
+;   - r11: arg val
 _start:
     ; Read the arguments
     mov rdi, [rsp] 
@@ -81,23 +129,54 @@ _start:
     mov qword [arg_number], 1
 
     .process_files_loop:
+        ; Check if all the files were processed
+        cmp r10, qword [arg_number]
+        jle .process_files_exit
+
         ; Get the file name
         mov rdi, [arg_number]
         call get_arg
 
+        ; Increment the arg number
+        inc qword [arg_number]
+
+        mov r11, rax ; Save the file name
+
+        ; Check if the file name is a flag
+        ; Check -h flag
+        mov rsi, r11
+        mov rdi, flag_help_text
+        call strcmp
+        cmp rax, 0
+        jne .flag_help_continue
+            mov byte [flag_help], 1
+            jmp .process_files_loop
+        .flag_help_continue:
+        ; Check -p flag
+        mov rsi, r11
+        mov rdi, flag_read_more_text
+        call strcmp
+        cmp rax, 0
+        jne .flag_read_more_continue
+            mov byte [flag_read_more], 1
+            jmp .process_files_loop
+        .flag_read_more_continue:
+
         ; Process the file
-        mov rdi, rax
+        mov rdi, r11
         call process_file
 
         ; Write a new line
         call write_newline
 
-        ; Increment the arg number
-        inc qword [arg_number]
+        jmp .process_files_loop
+    
+    .process_files_exit:
 
-        ; Check if there are more files
-        cmp r10, qword [arg_number]
-        jg .process_files_loop
+    cmp byte [flag_help], 1
+    jne .skip_help
+        call show_help_message
+    .skip_help:
 
     ; Exit the program
     jmp ok_exit
@@ -276,6 +355,10 @@ display_lines:
 
         ; Increment the line number
         inc qword [display_line_number]
+
+        ; Display '|'
+        mov dil, '|'
+        call write_one_byte
         pop rax
 
         mov r9, rax ; Save the line length
@@ -313,6 +396,10 @@ display_lines:
             ; Display the line
             mov rsi, r9
             call display_line
+
+            ; Display '|'
+            mov dil, '|'
+            call write_one_byte
             call write_newline
 
         ; Repeat

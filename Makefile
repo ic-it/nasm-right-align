@@ -29,7 +29,7 @@ $(BIN)/main: $(OBJS)
 	$(LINKER) -o $@ $^
 
 debug: $(BIN)/main
-	$(DBGR) $(DBGR_ARGS) $(BIN)/main --args $(BIN)/main test.txt 
+	$(DBGR) $(DBGR_ARGS) $(BIN)/main --args $(BIN)/main test.txt -h 
 
 clean:
 	rm -f $(BIN)/*

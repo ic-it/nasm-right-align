@@ -28,21 +28,27 @@ strlen:
 ; ## Output
 ; - rax: 0 if the strings are equal, 1 if they are not
 strcmp:
+    push rsi ; Save the pointers
+    push rdi
     .strcmp_loop:
         mov al, [rsi] ; Load the current character from the first string
         mov bl, [rdi] ; Load the current character from the second string
         cmp al, bl ; Compare the characters
         jne .strcmp_not_equal ; If they are not equal, return 1
         cmp al, 0 ; Check if we reached the end of the first string
-        je .strcmp_done ; If we did, return 0
+        je .strcmp_equal ; If we did, return 0
         inc rsi ; Move to the next character in the first string
         inc rdi ; Move to the next character in the second string
         jmp .strcmp_loop ; Repeat
     .strcmp_not_equal:
         mov rax, 1 ; The strings are not equal
-        ret
-    .strcmp_done:
+        jmp .strcmp_done
+    .strcmp_equal:
         xor rax, rax ; The strings are equal
+        jmp .strcmp_done
+    .strcmp_done:
+        pop rdi ; Restore the pointers
+        pop rsi
         ret
 
 ; Integer to Null-Terminated String
