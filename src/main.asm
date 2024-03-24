@@ -63,7 +63,7 @@ section .rodata
     fromy_msg db ' from ', 0
     fromy_msg_len equ $-fromy_msg
 
-    read_more_msg db '. Read more...', 0
+    read_more_msg db '. Read more (q to quit): ', 0
     read_more_msg_len equ $-read_more_msg
 
     ; Pagination
@@ -80,6 +80,7 @@ section .rodata
 
     ; Pagination constants
     max_lines_before_pause equ 10
+    quit_text db 'q', 0xa
 
     zero db 0
 
@@ -671,8 +672,15 @@ do_pagination:
 
     ; Wait for the user to press enter
     mov rsi, buffer
-    mov rdx, BUFFER_SIZE
+    mov rdx, 2
     call read_stdin
+
+    ; if q is pressed exit
+    mov rsi, quit_text
+    mov rdi, buffer
+    call strcmp
+    cmp rax, 0
+    je ok_exit
 
     mov rsi, line_up_clear_line_start_text
     mov rdx, line_up_clear_line_start_text_len
